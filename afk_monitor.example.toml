@@ -17,6 +17,8 @@ BountyFaction = false
 BountyValue = false
 # DynamicTitle uses the window title to display some info (Default: true, only works on Windows OS)
 DynamicTitle = true
+# Displays merits statistics with kill sumary (Default: false)
+SummaryMerits = false
 
 [Discord]
 # Use the settings below to enable Discord webhook integration
@@ -55,6 +57,7 @@ Missions = 2            # Kills completed for a mission
 MissionsAll = 3         # Kills completed for all missions
 SummaryKills = 2        # Summary of kills every 10 bounties
 SummaryBounties = 1     # Summary of bounties every 10
+SummaryMerits = 1       # Summary of merits every 10
 Inactivity = 3          # Warning of no recent journal activity
 
 # Custom profiles (advanced)
