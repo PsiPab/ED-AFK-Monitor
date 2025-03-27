@@ -102,6 +102,7 @@ class Instance:
 		self.killstime = 0
 		self.kills = 0
 		self.bounties = 0
+		self.merits = 0
 		self.lastsecurity = ''
 
 	def reset(self):
@@ -110,6 +111,7 @@ class Instance:
 		self.killstime = 0
 		self.kills = 0
 		self.bounties = 0
+		self.merits = 0
 		self.lastsecurity = ''
 		updatetitle()
 
@@ -292,15 +294,15 @@ def processevent(line):
 				kills_hour = round(3600 / avgseconds, 1)
 				avgbounty = session.bounties // session.kills
 				bounties_hour = round(3600 / (session.killstime / session.bounties))
-				avgmerits = track.totalmerits // session.kills
-				merits_hour = round(3600 / (session.killstime / track.totalmerits)) if track.totalmerits > 0 else 0
+				avgmerits = session.merits // session.kills
+				merits_hour = round(3600 / (session.killstime / session.merits)) if session.merits > 0 else 0
 				log = getloglevel('SummaryKills') if kills_hour > setting_lowkillrate else getloglevel('SummaryKills')+1
 				logevent(msg_term=f'Session kills: {session.kills} ({kills_hour}/hr | {time_format(avgseconds)}/kill)',
 						emoji='📝', timestamp=logtime, loglevel=log)
 				logevent(msg_term=f'Session bounties: {num_format(session.bounties)} ({num_format(bounties_hour)}/hr | {num_format(avgbounty)}/kill)',
 						emoji='📝', timestamp=logtime, loglevel=getloglevel('SummaryBounties'))
 				if setting_summarymerits:
-					logevent(msg_term=f'Session merits: {num_format(track.totalmerits)} ({num_format(merits_hour)}/hr | {num_format(avgmerits)}/kill)',
+					logevent(msg_term=f'Session merits: {num_format(session.merits)} ({num_format(merits_hour)}/hr | {num_format(avgmerits)}/kill)',
 						emoji='📝', timestamp=logtime, loglevel=getloglevel('SummaryMerits'))
 			
 			updatetitle()
@@ -418,6 +420,7 @@ def processevent(line):
 					emoji='🎯', timestamp=logtime, loglevel=getloglevel('Missions'))
 			updatetitle()
 		case 'PowerplayMerits':
+			session.merits += this_json['MeritsGained']
 			track.totalmerits += this_json['MeritsGained']
 		case 'Shutdown':
 			logevent(msg_term='Quit to desktop',
@@ -470,10 +473,15 @@ def shutdown():
 		kills_hour = round(3600 / avgseconds, 1)
 		avgbounty = track.totalbounties // track.totalkills
 		bounties_hour = round(3600 / (track.totaltime / track.totalbounties))
+		avgmerits = track.totalmerits // track.totalkills
+		merits_hour = round(3600 / (track.totaltime / track.totalmerits)) if track.totalmerits > 0 else 0
 		logevent(msg_term=f'Total kills: {track.totalkills} ({kills_hour}/hr | {time_format(avgseconds)}/kill)',
 				emoji='📝', loglevel=getloglevel('SummaryKills'))
 		logevent(msg_term=f'Total bounties: {num_format(track.totalbounties)} ({num_format(bounties_hour)}/hr | {num_format(avgbounty)}/kill)',
 				emoji='📝', loglevel=getloglevel('SummaryBounties'))
+		if setting_summarymerits:
+			logevent(msg_term=f'Total merits: {num_format(track.totalmerits)} ({num_format(merits_hour)}/hr | {num_format(avgmerits)}/kill)',
+				emoji='📝', loglevel=getloglevel('SummaryMerits'))
 	logevent(msg_term=f'Monitor stopped ({journal_file})',
 			msg_discord=f'**Monitor stopped** ({journal_file})',
 			emoji='📕', loglevel=2)
