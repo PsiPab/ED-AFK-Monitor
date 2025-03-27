@@ -17,7 +17,7 @@ BountyFaction = false
 BountyValue = false
 # DynamicTitle uses the window title to display some info (Default: true, only works on Windows OS)
 DynamicTitle = true
-# Displays merits statistics with kill sumary (Default: false)
+# Displays powerplay merits statistics with kill sumary (Default: false)
 SummaryMerits = false
 
 [Discord]
