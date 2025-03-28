@@ -32,7 +32,7 @@ TRUNC_FACTION = 30
 SHIPS_EASY = ['Adder', 'Asp Explorer', 'Asp Scout', 'Cobra Mk III', 'Cobra Mk IV', 'Diamondback Explorer', 'Diamondback Scout', 'Eagle', 'Imperial Courier', 'Imperial Eagle', 'Krait Phantom', 'Sidewinder', 'Viper Mk III', 'Viper Mk IV']
 SHIPS_HARD = ['Alliance Crusader', 'Alliance Challenger', 'Alliance Chieftain', 'Anaconda', 'Federal Assault Ship', 'Federal Dropship', 'Federal Gunship', 'Fer-de-Lance', 'Imperial Clipper', 'Krait MK II', 'Python', 'Vulture', 'Type-10 Defender']
 BAIT_MESSAGES = ['$Pirate_ThreatTooHigh', '$Pirate_NotEnoughCargo', '$Pirate_OnNoCargoFound']
-LOGLEVEL_DEFAULTS = {'ScanEasy': 1, 'ScanHard': 2, 'KillEasy': 2, 'KillHard': 2, 'FighterHull': 2, 'FighterDown': 3, 'ShipShields': 3, 'ShipHull': 3, 'Died': 3, 'CargoLost': 3, 'BaitValueLow': 2, 'SecurityScan': 2, 'SecurityAttack': 3, 'FuelLow': 2, 'FuelCritical': 3, 'Missions': 2, 'MissionsAll': 3, 'SummaryKills': 2, 'SummaryBounties': 1, 'Inactivity': 3}
+LOGLEVEL_DEFAULTS = {'ScanEasy': 1, 'ScanHard': 2, 'KillEasy': 2, 'KillHard': 2, 'FighterHull': 2, 'FighterDown': 3, 'ShipShields': 3, 'ShipHull': 3, 'Died': 3, 'CargoLost': 3, 'BaitValueLow': 2, 'SecurityScan': 2, 'SecurityAttack': 3, 'FuelLow': 2, 'FuelCritical': 3, 'Missions': 2, 'MissionsAll': 3, 'SummaryKills': 2, 'SummaryBounties': 1, 'SummaryMerits': 1, 'Inactivity': 3}
 
 # Load config file
 if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
@@ -101,6 +101,7 @@ class Instance:
 		self.killstime = 0
 		self.kills = 0
 		self.bounties = 0
+		self.merits = 0
 		self.lastsecurity = ''
 
 	def reset(self):
@@ -109,6 +110,7 @@ class Instance:
 		self.killstime = 0
 		self.kills = 0
 		self.bounties = 0
+		self.merits = 0
 		self.lastsecurity = ''
 		updatetitle()
 
@@ -117,6 +119,7 @@ class Tracking():
 		self.totalkills = 0
 		self.totaltime = 0
 		self.totalbounties = 0
+		self.totalmerits = 0
 		self.fighterhull = 0
 		self.logged = 0
 		self.missions = False
@@ -290,11 +293,15 @@ def processevent(line):
 				kills_hour = round(3600 / avgseconds, 1)
 				avgbounty = session.bounties // session.kills
 				bounties_hour = round(3600 / (session.killstime / session.bounties))
+				avgmerits = session.merits // session.kills
+				merits_hour = round(3600 / (session.killstime / session.merits)) if session.merits > 0 else 0
 				log = getloglevel('SummaryKills') if kills_hour > setting_lowkillrate else getloglevel('SummaryKills')+1
 				logevent(msg_term=f'Session kills: {session.kills} ({kills_hour}/hr | {time_format(avgseconds)}/kill)',
 						emoji='📝', timestamp=logtime, loglevel=log)
 				logevent(msg_term=f'Session bounties: {num_format(session.bounties)} ({num_format(bounties_hour)}/hr | {num_format(avgbounty)}/kill)',
 						emoji='📝', timestamp=logtime, loglevel=getloglevel('SummaryBounties'))
+				logevent(msg_term=f'Session merits: {num_format(session.merits)} ({num_format(merits_hour)}/hr | {num_format(avgmerits)}/kill)',
+						emoji='📝', timestamp=logtime, loglevel=getloglevel('SummaryMerits'))
 			
 			updatetitle()
 		case 'MissionRedirected' if 'Mission_Massacre' in this_json['Name']:
@@ -410,6 +417,9 @@ def processevent(line):
 			logevent(msg_term=f'Massacre mission {event} (active: {len(track.missionsactive)})',
 					emoji='🎯', timestamp=logtime, loglevel=getloglevel('Missions'))
 			updatetitle()
+		case 'PowerplayMerits':
+			session.merits += this_json['MeritsGained']
+			track.totalmerits += this_json['MeritsGained']
 		case 'Shutdown':
 			logevent(msg_term='Quit to desktop',
 					emoji='🛑', timestamp=logtime, loglevel=2)
@@ -461,10 +471,14 @@ def shutdown():
 		kills_hour = round(3600 / avgseconds, 1)
 		avgbounty = track.totalbounties // track.totalkills
 		bounties_hour = round(3600 / (track.totaltime / track.totalbounties))
+		avgmerits = track.totalmerits // track.totalkills
+		merits_hour = round(3600 / (track.totaltime / track.totalmerits)) if track.totalmerits > 0 else 0
 		logevent(msg_term=f'Total kills: {track.totalkills} ({kills_hour}/hr | {time_format(avgseconds)}/kill)',
 				emoji='📝', loglevel=getloglevel('SummaryKills'))
 		logevent(msg_term=f'Total bounties: {num_format(track.totalbounties)} ({num_format(bounties_hour)}/hr | {num_format(avgbounty)}/kill)',
 				emoji='📝', loglevel=getloglevel('SummaryBounties'))
+		logevent(msg_term=f'Total merits: {num_format(track.totalmerits)} ({num_format(merits_hour)}/hr | {num_format(avgmerits)}/kill)',
+				emoji='📝', loglevel=getloglevel('SummaryMerits'))
 	logevent(msg_term=f'Monitor stopped ({journal_file})',
 			msg_discord=f'**Monitor stopped** ({journal_file})',
 			emoji='📕', loglevel=2)
