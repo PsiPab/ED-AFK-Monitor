@@ -117,6 +117,7 @@ setting_extendedstats = getconfig('Settings', 'ExtendedStats', False)
 setting_dynamictitle = getconfig('Settings', 'DynamicTitle', True)
 discord_webhook = args.webhook if args.webhook is not None else getconfig('Discord', 'WebhookURL', '')
 discord_forumchannel = getconfig('Discord', 'ForumChannel', False)
+discord_thread_cmdr_names = getconfig('Discord', 'ThreadCmdrNames', False)
 discord_user = getconfig('Discord', 'UserID', 0)
 discord_timestamp = getconfig('Discord', 'Timestamp', True)
 discord_identity = getconfig('Discord', 'Identity', True)
@@ -258,6 +259,14 @@ print(f'{Col.YELL}Journal file:{Col.END} {journal_file}')
 if profile: print(f'{Col.YELL}Config profile:{Col.END} {profile}')
 print('\nStarting... (Press Ctrl+C to stop)\n')
 
+commander = '[Unknown]'
+with open(Path(journal_dir / journal_file), 'r', encoding='utf-8') as file:
+	for line in file:
+		entry = json.loads(line)
+		if entry['event'] == 'Commander':
+			commander = str(entry['Name']).title()
+			break
+
 # Check webhook appears valid before starting
 reg = r'^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-z0-9_-]+$'
 if discord_enabled and re.search(reg, discord_webhook):
@@ -268,8 +277,11 @@ if discord_enabled and re.search(reg, discord_webhook):
 	if discord_forumchannel:
 		journal_start = datetime.fromisoformat(journal_file[8:-7])
 		journal_start = datetime.strftime(journal_start, '%Y-%m-%d %H:%M:%S')
-		webhook.thread_name = journal_start
-		#debug(f'webhook.thread_name: {webhook.thread_name}')
+		if discord_thread_cmdr_names:
+			webhook.thread_name = f'{commander} {journal_start}'
+		else:
+			webhook.thread_name = journal_start
+		#debug(f'webhook.thread_name: journal_start')
 elif discord_enabled:
 	discord_enabled = False
 	discord_test = False

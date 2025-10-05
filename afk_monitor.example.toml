@@ -28,6 +28,8 @@ WebhookURL = ''
 UserID = 0
 # ForumChannel specifies webhook is for a forum channel and enables thread support (Default: false)
 ForumChannel = false
+# ThreadCmdrNames = true include the commander name in the thread name along with the start time (Default: false)
+ThreadCmdrNames = false
 # Timestamp = true (default) appends a timestamp to Discord messages, set false to disable
 Timestamp = true
 # Identity = true (default) provides default name and avatar for webhook, set false to use user-set
