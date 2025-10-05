@@ -86,12 +86,14 @@ parser = argparse.ArgumentParser(
     prog='ED AFK Monitor',
     description='Live monitoring of Elite Dangerous AFK sessions to terminal and Discord')
 parser.add_argument('-p', '--profile', help='Custom profile for config settings')
-parser.add_argument('-f', '--fileselect', action='store_true', default=None, help='Show list of recent journals to chose from')
 parser.add_argument('-j', '--journal', help='Override for path to journal folder')
 parser.add_argument('-w', '--webhook', help='Override for Discord webhook URL')
 parser.add_argument('-r', '--resetsession', action='store_true', default=None, help='Reset session stats after preloading')
 parser.add_argument('-t', '--test', action='store_true', default=None, help='Re-routes Discord messages to terminal')
 parser.add_argument('-d', '--debug', action='store_true', default=None, help='Print information for debugging')
+file_group = parser.add_mutually_exclusive_group()
+file_group.add_argument('-s', '--setfile', help='Set specific journal file to use')
+file_group.add_argument('-f', '--fileselect', action='store_true', default=None, help='Show list of recent journals to chose from')
 
 args = parser.parse_args()
 
@@ -108,6 +110,7 @@ def getconfig(category, setting, default=None):
 profile = args.profile if args.profile is not None else None
 setting_fileselect = args.fileselect if args.fileselect is not None else False
 setting_journal = args.journal if args.journal is not None else getconfig('Settings', 'JournalFolder')
+setting_journal_file = args.setfile if args.setfile is not None else None
 setting_utc = getconfig('Settings', 'UseUTC', False)
 setting_warnkillrate = getconfig('Settings', 'WarnKillRate', 20)
 setting_warnnokills = getconfig('Settings', 'WarnNoKills', 20)
@@ -221,6 +224,12 @@ print(f'{Col.YELL}Journal folder:{Col.END} {journal_dir}')
 
 if not journal_file and len(journals) == 0:
 	fallover(f"Directory does not contain any journal file")
+
+# Set specific journal file
+if setting_journal_file:
+	journal_file = setting_journal_file if bool(re.search(reg, setting_journal_file)) else None
+	if not journal_file or not (journal_dir / journal_file).is_file():
+		fallover(f"Journal file {setting_journal_file} not found in {journal_dir}")
 
 # Journal selector
 if setting_fileselect:
