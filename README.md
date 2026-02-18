@@ -66,6 +66,20 @@ Defaults are intended to be sensible for those new to AFK. For example, scans of
 
 To reset any log levels to defaults simply copy the appropriate values from `afk_monitor.example.toml`.
 
+## Launch Arguments
+
+You can pass the following arguments when launching AFK Monitor:
+```
+-p, --profile <profile_name>                  Load a specific profile for config settings
+-j, --journal <journal_folder_path>           Override for path to journal folder
+-w, --webhook <webhook_url>                   Override for Discord webhook URL
+-r, --resetsession                            Reset session stats after preloading
+-t, --test                                    Re-routes Discord messages to terminal
+-d, --debug                                   Print information for debugging
+-s, --setfile <journal_file_path>             Set specific journal file to use
+-f, --fileselect                              Show list of recent journals to chose from
+```
+
 ## Common Issues
 
 ### I get some output to terminal then nothing else
