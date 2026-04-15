@@ -12,22 +12,25 @@ Real-time monitoring of Elite Dangerous journal files for logging AFK massacre f
 - [Elite Dangerous AFK Monitor](#elite-dangerous-afk-monitor)
   - [Contents](#contents)
   - [Events and information logged](#events-and-information-logged)
+    - [Plus realtime reporting of...](#plus-realtime-reporting-of)
   - [Getting started](#getting-started)
     - [Standalone (EXE) version](#standalone-exe-version)
     - [Python version](#python-version)
   - [Configuring log levels](#configuring-log-levels)
+  - [Launch Arguments](#launch-arguments)
   - [Common Issues](#common-issues)
-    - [I get some output to terminal then nothing else](#i-get-some-output-to-terminal-then-nothing-else)
-    - [I'm noticing kills in-game that aren't being logged](#im-noticing-kills-in-game-that-arent-being-logged)
-    - [Ships scans not all reported / seem wrong](#ships-scans-not-all-reported--seem-wrong)
-    - [Hull was damaged but not reported](#hull-was-damaged-but-not-reported)
-    - [I ejected cargo manually and got notified](#i-ejected-cargo-manually-and-got-notified)
-    - [There are garbled characters in the terminal output](#there-are-garbled-characters-in-the-terminal-output)
+    - [No new terminal output during a live session](#no-new-terminal-output-during-a-live-session)
+    - [Some kills are not being logged](#some-kills-are-not-being-logged)
+    - [Ships scans are reported when manually scanned](#ships-scans-are-reported-when-manually-scanned)
+    - [Ship or fighter hull damage not logged](#ship-or-fighter-hull-damage-not-logged)
+    - [Stolen cargo notifications when ejecting cargo](#stolen-cargo-notifications-when-ejecting-cargo)
+    - [Garbled characters or repeated lines in terminal output](#garbled-characters-or-repeated-lines-in-terminal-output)
 
 ## Events and information logged
-- Ship scans (by player or by NPC pilot in fighter)
+- Outgoing ship scans (by player or by NPC pilot in fighter)
+- Incoming scans of ship cargo by pirates
 - Bounties (i.e. kills) incl. faction and time since previous
-- Kill/bounty/merit summary and average rates every 10 kills
+- Kill/bounty/merit summary and recent average rates
 - Mission kills completed and missions remaining
 - Ship shields down/restored
 - Ship/fighter hull damage
@@ -37,11 +40,20 @@ Real-time monitoring of Elite Dangerous journal files for logging AFK massacre f
 - Fuel reserves low/critical
 - Warnings about hostile security forces
 - Low kill rate per hour warnings
-- Journal inactivity detection (e.g. due to game or network issues)
+- No kills in x minutes warnings
 
-...plus some other minor things
+### Plus realtime reporting of...
+- Kill rate, elapsed time since last kill & number of kills
+- Cargo scan rate, elapsed time since last scan & number of scans
+- Session time
+- Mission status
 
 ## Getting started
+
+**Standalone (EXE) version**: Recommended for Windows users that aren't familiar with Python.  
+**Python version**: For everyone else, including Linux users.
+
+> ℹ️ AFK Monitor uses features of modern terminal emulators such as [Windows Terminal](https://apps.microsoft.com/detail/9n0dx20hk701). Functionality will be degraded with older software such as the the Windows 10 console. For more information see [Terminal Support](https://github.com/PsiPab/ED-AFK-Monitor/wiki/Terminal-Support).
 
 ### Standalone (EXE) version
 
@@ -50,14 +62,16 @@ Real-time monitoring of Elite Dangerous journal files for logging AFK massacre f
 - (Optional) For Discord support edit `WebhookURL` and `UserID` under `[Discord]` in `afk_monitor.toml`
 - Start Elite Dangerous then run `afk_monitor.exe`
 
+For more detailed instructions see [Basic Setup](https://github.com/PsiPab/ED-AFK-Monitor/wiki/Basic-Setup).
+
 ### Python version
 
-Requirements: [Python 3.x](https://www.python.org/downloads/), [discord-webhook](https://github.com/lovvskillz/python-discord-webhook) (optional, required for Discord support)
+Requirements: [Python 3.12+](https://www.python.org/downloads/), [discord-webhook](https://github.com/lovvskillz/python-discord-webhook) (optional, required for Discord support)
 - Download `Source code (zip)` from [releases](https://github.com/PsiPab/ED-AFK-Monitor/releases) and extract the contents to a folder
 - Copy `afk_monitor.example.toml` and rename the copy to `afk_monitor.toml`
 - (Optional) For Discord support edit `WebhookURL` and `UserID` under `[Discord]` in `afk_monitor.toml`
 - Start Elite Dangerous then double-click `afk_monitor.py` *or* open a terminal and run `py afk_monitor.py`
-
+  
 ## Configuring log levels
 
 Each type of event can be set to one of four additive output levels - nothing (0), terminal (1), Discord (2) or Discord plus user ping (3). These can be configured by editing the values in `afk_monitor.toml` under the section `[LogLevels]`. Each event type is described in the config file.
@@ -82,28 +96,26 @@ You can pass the following arguments when launching AFK Monitor:
 
 ## Common Issues
 
-### I get some output to terminal then nothing else
+### No new terminal output during a live session
 
-By default AFK Monitor watches your latest journal, so make sure to start it after loading the game or it may process an older journal and produce no further output. If you want to monitor a different journal pass `--fileselect` when starting AFK Monitor and you will be presented with a list of recent journals to chose from.
+By default AFK Monitor watches your latest journal, so make sure to start it after loading the game. To monitor a different journal pass `--fileselect` when starting AFK Monitor and a list of recent journals will be provided to chose from.
 
-### I'm noticing kills in-game that aren't being logged
+### Some kills are not being logged
 
-ED does not log all kills/bounties either in-game or to the journal (anywhere from 0-30% are missed). This is a game limitation so there is nothing I can do about it. On the upside, these 'ghost' kills still count towards your mission completions.
+ED does not log all bounties either in-game or to the journal (anywhere from 0-30% are missed). This is a game limitation. However, these 'ghost' kills are still counted towards your mission completions if they are for the target faction.
 
-### Ships scans not all reported / seem wrong
+### Ships scans are reported when manually scanned
 
-Scans are recorded in the journal in the same way when targeted by an NPC pilot *or* the player manually. The only reliable data is that a scan was done of a type of ship, so to keep things from being too spammy we only report each ship type once between kills and then reset after a kill.
+Scans by your NPC pilot are logged just like any other scans. To avoid erroneous logging of scans (e.g. of system security) while using AFK Monitor set and use a key bind for 'select next hostile target' instead of scanning any target. Alternatively, outgoing scan logs can be disabled by config.
 
-In addition, if you manually target a type of ship that pirates also use, e.g. system security, those scans will be logged just like any other. For this reason it is best to only use a target key bind for 'select next hostile target' instead if you have AFK Monitor running with scans enabled.
+### Ship or fighter hull damage not logged
 
-### Hull was damaged but not reported
+ED only records hull damage in 20% increments, so if your ship or fighter hull was reduced to 81% for example that wouldn't be reported. Further damage that reduces the hull below 80% (or 60%, 40%, 20%) would be logged.
 
-ED only records hull damage in 20% increments, so if your ship or fighter hull was reduced to 81% for example that wouldn't be reported until it dropped further.
+### Stolen cargo notifications when ejecting cargo
 
-### I ejected cargo manually and got notified
+ED's journal does not differentiate between individual units of cargo jettisoned by the player or stolen by hatch breaker limpets. As a workaround if you want to get rid of cargo with AFK Monitor running and not be notified you can use 'Abandon' instead of 'Jettison', or jettison more than one unit at a time.
 
-ED's journal does not differentiate between cargo jettisoned by the player or stolen by hatch breaker limpets. As a workaround if you want to get rid of cargo with the script running and not be notified you can use 'Abandon' instead of 'Jettison', or jettison more than one unit at a time.
+### Garbled characters or repeated lines in terminal output
 
-### There are garbled characters in the terminal output
-
-Windows 10 command prompt doesn't support nice things like colours or emoji. Install and use [Windows Terminal](https://github.com/microsoft/terminal) instead and things will look *a lot* better (see screenshot at top of ReadMe).
+The Windows 10 console doesn't support some of the modern terminal features AFK Monitor uses. It is recommended to install and use [Windows Terminal](https://apps.microsoft.com/detail/9n0dx20hk701) instead. For more information see [Terminal Support](https://github.com/PsiPab/ED-AFK-Monitor/wiki/Terminal-Support).
