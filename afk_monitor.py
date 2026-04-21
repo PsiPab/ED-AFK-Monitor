@@ -8,7 +8,8 @@ import time
 import tomllib
 import traceback
 import unicodedata
-from datetime import datetime, timezone
+from bisect import bisect_left
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from urllib.request import urlopen
 
@@ -21,13 +22,14 @@ except ImportError:
 
 def fallover(message):
     print(message)
-    if sys.argv[0].count("\\") > 1: input("Press ENTER to exit")
+    if sys.argv[0].count("\\") > 1:
+        input("Press ENTER to exit")
     sys.exit()
 
 # Internals
 DEBUG_MODE = False
 DISCORD_TEST = False
-VERSION = 260320.1
+VERSION = 260421
 GITHUB_REPO = "PsiPab/ED-AFK-Monitor"
 DUPE_MAX = 5
 FUEL_LOW = 0.2		# 20%
@@ -41,7 +43,7 @@ BAIT_MESSAGES = ["$Pirate_ThreatTooHigh", "$Pirate_NotEnoughCargo", "$Pirate_OnN
 COMBAT_RANKS = ["Harmless", "Mostly Harmless", "Novice", "Competent", "Expert", "Master", "Dangerous", "Deadly", "Elite", "Elite I", "Elite II", "Elite III", "Elite IV", "Elite V"]
 # Config defaults
 DEFAULTS_SETTINGS = {"JournalFolder": "", "UseUTC": False, "LiveStatus": True, "DynamicTitle": True, "WarnKillRate": 20, "WarnNoKills": 20, "PirateNames": False, "BountyFaction": False, "BountyValue": False, "ExtendedStats": False, "MinScanLevel": 1}
-DEFAULTS_EXTRA = {"RecentFiles": 10, "TruncatePirate": 25, "TruncateFaction": 30, "WarnNoKillsInitial": 5, "WarnKillRateDelay": 5, "WarnCooldown": 30, "RecentAverageNum": 10, "StatusPadChar": " ", "StatusColBG": "5;236", "StatusColFG": "5;254", "StatusSafeMargin": 2}
+DEFAULTS_EXTRA = {"RecentFiles": 10, "TruncatePirate": 25, "TruncateFaction": 30, "WarnNoKillsInitial": 5, "WarnKillRateDelay": 5, "WarnCooldown": 30, "RecentIntervals": [15, 30, 60], "StatusPadChar": " ", "StatusColBG": "5;236", "StatusColFG": "5;254", "StatusSafeMargin": 2}
 DEFAULTS_DISCORD = {"WebhookURL": "", "UserID": 0, "PrependCmdrName": False, "ForumChannel": False, "ThreadCmdrNames": False, "Timestamp": True, "Identity": True}
 DEFAULTS_LOG_LEVELS = {"ScanIncoming": 1, "ScanEasy": 1, "ScanHard": 2, "KillEasy": 2, "KillHard": 2, "FighterHull": 2, "FighterDown": 3, "ShipShields": 3, "ShipHull": 3, "Died": 3, "CargoLost": 3, "BaitValueLow": 2, "SecurityScan": 2, "SecurityAttack": 3, "FuelReport": 1, "FuelLow": 2, "FuelCritical": 3, "Missions": 2, "MissionsAll": 3, "Merits": 0, "NoKills": 3, "KillRate": 3, "SummaryKills": 2, "SummaryFaction": 0, "SummaryScans": 0, "SummaryBounties": 2, "SummaryMerits": 2}
 
@@ -179,9 +181,9 @@ except Exception:
 
 # Print header
 title = f"ED AFK Monitor v{VERSION} by CMDR PSIPAB"
-msg.log(f"{Col.CYAN}{"="*len(title)}")
+msg.log(f"{Col.CYAN}{'='*len(title)}")
 msg.log(f"{title}")
-msg.log(f"{"="*len(title)}{Col.END}\n")
+msg.log(f"{'='*len(title)}{Col.END}\n")
 if VERSION < latest_version:
     msg.log(f"{Col.YELL}Update v{latest_version} is available!{Col.END}\n{Col.WHITE}Download:{Col.END} https://github.com/{GITHUB_REPO}/releases\n")
 
@@ -232,7 +234,7 @@ def getconfig(category: str, defaults: dict, warn_missing = True) -> dict:
                 msg.log(f"{WARNING} Config '{category}' -> '{setting}' not found (using default: {defaults[setting]})")
         
         # Check setting matches type provided in defaults
-        if type(this_setting) != type(defaults[setting]):
+        if type(this_setting) is not type(defaults[setting]):
             msg.log(f"{WARNING} Config '{category}' -> '{setting}' expected type {type(defaults[setting]).__name__} but got {type(this_setting).__name__} (using default: {defaults[setting]})")
             this_setting =  defaults[setting]
             
@@ -250,7 +252,7 @@ debug_mode = args.debug if args.debug is not None else DEBUG_MODE
 
 def debug(message):
     if debug_mode:
-        msg.log(f"{Col.WHITE}[Debug]{Col.END} {message} [{datetime.strftime(datetime.now(), "%H:%M:%S")}]")
+        msg.log(f"{Col.WHITE}[Debug]{Col.END} {message} [{datetime.strftime(datetime.now(), '%H:%M:%S')}]")
 
 debug(f"Arguments: {args}")
 debug(f"Config: {config}")
@@ -265,10 +267,10 @@ class Stats:
         self.lastkillutc = 0
         self.lastkillmono = 0
         self.killstime = 0
-        self.killsrecent = []
+        self.kill_times = []
         self.scansin = 0
         self.scanstime = 0
-        self.scansrecent = []
+        self.scan_times = []
         self.lastscanutc = 0
         self.lastscanmono = 0
         self.kills = 0
@@ -308,11 +310,16 @@ class Tracking:
         self.cmdrlocation = None
         self.lastcheck = None
     
-    def sessionstart(self, reset=False):
+    def sessionstart(self, reset=False, delta=0):
         if not self.deploytime or reset:
-            self.deploytime = self.thiseventtime
-            debug(f"Session tracking started at {self.deploytime}")
+            if not delta:
+                self.deploytime = self.thiseventtime
+            else:
+                self.deploytime = self.thiseventtime - timedelta(seconds=delta)
             session.reset()
+            debug(f"Session tracking started at {self.deploytime}")
+            session.kill_times.append(self.deploytime)
+            session.scan_times.append(self.deploytime)
             self.warnednokills = None
             self.warnedkillrate = None
             self.lastcheck = time.monotonic()
@@ -353,15 +360,16 @@ if not setting_journal_file:
             else:
                 # Build list of recent journals
                 journals.append(entry.name)
-                if len(journals) == setting_recent_files: break
+                if len(journals) == setting_recent_files:
+                    break
     
     # Exit if no journals were found
     if not journal_file and len(journals) == 0:
-        fallover(f"Journal folder does not contain any valid journal files")
+        fallover("Journal folder does not contain any valid journal files")
     
     # Journal selector
     if setting_fileselect:
-        msg.log(f"\nLatest journals:")
+        msg.log("\nLatest journals:")
 
         # Get commander name from each journal and output list
         commanders = []
@@ -391,9 +399,9 @@ if not setting_journal_file:
                     journal_file = journals[selection-1]
                     track.cmdrname = commanders[selection-1]
                 else:
-                    fallover(f"Invalid number, exiting...")
+                    fallover("Invalid number, exiting...")
             except ValueError:
-                fallover(f"Exiting...")
+                fallover("Exiting...")
         else:
             journal_file = journals[0]
             track.cmdrname = commanders[0]
@@ -443,12 +451,13 @@ if not args.profile:
     profile = track.cmdrname
     if profile in config:
         config_info = " (auto)"
-if profile and not profile in config:
+if profile and profile not in config:
     debug(f"No config settings for '{profile}' found")
     profile = None
 
-msg.log(f"{Col.YELL}Config profile:{Col.END} {profile if profile else "Default"}{config_info}")
-if profile: debug(f"Profile '{profile}': {config[profile]}")
+msg.log(f"{Col.YELL}Config profile:{Col.END} {profile if profile else 'Default'}{config_info}")
+if profile:
+    debug(f"Profile '{profile}': {config[profile]}")
 
 # Get settings from config
 conf_settings = getconfig("Settings", DEFAULTS_SETTINGS)
@@ -530,7 +539,7 @@ def logevent(msg_term, msg_discord=None, emoji=None, timestamp=None, loglevel=2,
             track.dupewarn = False
         track.dupeevent = event
         discord_message = msg_discord if msg_discord else f"**{msg_term}**"
-        ping = f" <@{conf_discord["UserID"]}>" if loglevel > 2 and track.duperepeats == 1 else ""
+        ping = f" <@{conf_discord['UserID']}>" if loglevel > 2 and track.duperepeats == 1 else ""
         logtime = f" {{{logtime}}}" if conf_discord["Timestamp"] else ""
         cmdrname = "" if not conf_discord["PrependCmdrName"] else f"[{track.cmdrname}] "
         if track.duperepeats <= DUPE_MAX:
@@ -545,6 +554,40 @@ def per_hour(seconds=0, precision=None):
         return round(3600 / seconds, precision)
     else:
         return 0
+
+def recent_rates(timestamps: list, checktime: datetime, intervals: list, precision=None):
+    """Calculates the number of events per hour of a given time range"""
+    
+    if checktime is None:
+        checktime = datetime.now(timezone.utc)
+    
+    try:
+        rates_out = {}
+        if len(timestamps) > 1:
+            duration = checktime - timestamps[0]
+            for i in intervals:
+                if duration > timedelta(minutes=i):
+                    delta = timedelta(minutes=i)
+                    start = checktime - delta
+                    time_since = (checktime - timestamps[-1]).total_seconds()
+                    index_start = bisect_left(timestamps, start) - 1
+                    index_end = bisect_left(timestamps, checktime)
+                    num_events = max(0, index_end - index_start)
+                    if num_events > 1:
+                        per_hour = (3600 / (delta.total_seconds() + time_since)) * (num_events -1)
+                        rates_out[str(i)] = str(round(per_hour, precision))
+                    else:
+                        rates_out[str(i)] = "0"
+    except Exception as e:
+        msg.log(f"Error: {e}")
+    
+    # Format output
+    if rates_out:
+        keys = "/".join(rates_out.keys())
+        vals = "/".join(rates_out.values())
+        return f"{keys}m: {vals}h"
+    else:
+        return None
 
 # Shorten a string
 def truncate(input: str, chars: int) -> str:
@@ -581,12 +624,10 @@ def processevent(line):
                         thisscan = logtime
                         if session.lastscanutc:
                             seconds = int((thisscan-session.lastscanutc).total_seconds())
-                            if len(session.scansrecent) == conf_settings["RecentAverageNum"]:
-                                session.scansrecent.pop(0)
-                            session.scansrecent.append(seconds)
                             session.scanstime += seconds
                             total.scanstime += seconds
                         session.lastscanutc = logtime
+                        session.scan_times.append(logtime)
                         if not track.preloading:
                             session.lastscanmono = time.monotonic()
                         
@@ -601,11 +642,11 @@ def processevent(line):
                             emoji="🎣", timestamp=logtime, loglevel=conf_log_levels["BaitValueLow"], event="BaitValueLow")
                 elif "Police_Attack" in j["Message"]:
                     logevent(msg_term=f"{Col.BAD}Under attack by security services!{Col.END}",
-                            msg_discord=f"**Under attack by security services!**",
+                            msg_discord="**Under attack by security services!**",
                             emoji="🚨", timestamp=logtime, loglevel=conf_log_levels["SecurityAttack"])
             case "ShipTargeted" if "Ship" in j:
                 ship = j["Ship_Localised"] if "Ship_Localised" in j else j["Ship"].title()
-                rank = "" if not "PilotRank" in j else f" ({j["PilotRank"]})"
+                rank = "" if "PilotRank" not in j else f" ({j['PilotRank']})"
                 # Security
                 if ship != session.lastsecurity and "PilotName" in j and "$ShipName_Police" in j["PilotName"]:
                     session.lastsecurity = ship
@@ -614,11 +655,12 @@ def processevent(line):
                             emoji="🚨", timestamp=logtime, loglevel=conf_log_levels["SecurityScan"])
                 # Pirates etc.
                 elif j["Ship"] in SHIPS_EASY or j["Ship"] in SHIPS_HARD:
-                    track.sessionstart()
+                    if not track.deploytime:
+                        track.sessionstart(delta=30)
                     piratename = j["PilotName_Localised"] if "PilotName_Localised" in j else UNKNOWN
                     check = piratename if conf_settings["MinScanLevel"] != 0 else ship
                     scanstage = j["ScanStage"] if "ScanStage" in j else 0
-                    if scanstage >= conf_settings["MinScanLevel"] and not check in session.scansoutrecents:
+                    if scanstage >= conf_settings["MinScanLevel"] and check not in session.scansoutrecents:
                         if len(session.scansoutrecents) == 10:
                             session.scansoutrecents.pop(0)
                         session.scansoutrecents.append(check)
@@ -637,7 +679,9 @@ def processevent(line):
                                 msg_discord=f"**{ship}**{hard}{rank}{pirate}",
                                 emoji="🔎", timestamp=logtime, loglevel=log)
             case "Bounty" | "FactionKillBond":
-                track.sessionstart()
+                if not track.deploytime:
+                    track.sessionstart(delta=60)
+                
                 if conf_settings["MinScanLevel"] == 0:
                     session.scansoutrecents.clear()
                 session.kills +=1
@@ -651,14 +695,12 @@ def processevent(line):
                     seconds = int((thiskill-session.lastkillutc).total_seconds())
                     killtime = f" (+{time_format(seconds)})"
                     session.killstime += seconds
-                    if len(session.killsrecent) == conf_settings["RecentAverageNum"]:
-                        session.killsrecent.pop(0)
-                    session.killsrecent.append(seconds)
                     total.killstime += seconds
                 session.lastkillutc = logtime
+                session.kill_times.append(logtime)
                 if not track.preloading:
                     session.lastkillmono = time.monotonic()
-
+                
                 hard = ""
                 log = conf_log_levels["KillEasy"]
                 col = Col.WHITE
@@ -677,7 +719,7 @@ def processevent(line):
                     ship = "Bond"
                     track.killtype = "bonds"
 
-                piratename = f" [{truncate(j['PilotName_Localised'], conf_settings["TruncatePirate"])}]" if "PilotName_Localised" in j and conf_settings["PirateNames"] else ""
+                piratename = f" [{truncate(j['PilotName_Localised'], conf_settings['TruncatePirate'])}]" if "PilotName_Localised" in j and conf_settings["PirateNames"] else ""
                 session.bounties += bountyvalue
                 total.bounties += bountyvalue
                 kills_t = f" x{session.kills}" if conf_settings["ExtendedStats"] else ""
@@ -743,7 +785,7 @@ def processevent(line):
                     emoji="⛽", timestamp=logtime, loglevel=fuel_loglevel)
             case "FighterDestroyed" if track.lasteventname != "StartJump":
                 logevent(msg_term=f"{Col.BAD}Fighter destroyed!{Col.END}",
-                        msg_discord=f"**Fighter destroyed!**",
+                        msg_discord="**Fighter destroyed!**",
                         emoji="🕹️", timestamp=logtime, loglevel=conf_log_levels["FighterDown"])
             case "LaunchFighter" if not j["PlayerControlled"]:
                 logevent(msg_term="Fighter launched",
@@ -828,7 +870,8 @@ def processevent(line):
                         emoji="🎯", timestamp=logtime, loglevel=conf_log_levels["Missions"])
             case "MissionAbandoned" | "MissionCompleted" | "MissionFailed" if track.missions and j["MissionID"] in track.missionsactive:
                 track.missionsactive.remove(j["MissionID"])
-                if track.missionredirects > 0: track.missionredirects -= 1
+                if track.missionredirects > 0:
+                    track.missionredirects -= 1
                 event = j["event"][7:].lower()
                 logevent(msg_term=f"Massacre mission {event} (active: {len(track.missionsactive)})",
                         emoji="🎯", timestamp=logtime, loglevel=conf_log_levels["Missions"])
@@ -836,7 +879,7 @@ def processevent(line):
                 if session.meritstoreport > 0 and j["MeritsGained"] < 500:
                     session.merits += j["MeritsGained"]
                     total.merits += j["MeritsGained"]
-                    logevent(msg_term=f"Merits: +{j["MeritsGained"]} ({j["Power"]})",
+                    logevent(msg_term=f"Merits: +{j['MeritsGained']} ({j['Power']})",
                                 emoji="🎫", timestamp=logtime, loglevel=conf_log_levels["Merits"])
                     session.meritstoreport -= 1
             case "Location":
@@ -860,7 +903,7 @@ def processevent(line):
                 else:
                     event = "FSD jump to"
                     emoji = "☀️"
-                logevent(msg_term=f"{event} {j["StarSystem"]}",
+                logevent(msg_term=f"{event} {j['StarSystem']}",
                         emoji=emoji, timestamp=logtime, loglevel=2)
                 track.sessionend()
         track.lasteventname = j["event"]
@@ -903,8 +946,10 @@ def update_status(reset=False):
             # Time
             time_utc = datetime.now(timezone.utc)
             log_time = datetime.now(timezone.utc) if conf_settings["UseUTC"] else datetime.now().astimezone()
-            ts = datetime.strftime(log_time, "%H:%M:%S")
-            
+            time_clock = datetime.strftime(log_time, "%H:%M:%S")
+            session_secs = int((time_utc - track.deploytime).total_seconds())
+            time_sesh = time_format(session_secs)
+
             # Kills
             if session.kills > 0:
                 kills_hour = per_hour((time_utc - track.deploytime).total_seconds() / session.kills, 1)
@@ -931,14 +976,29 @@ def update_status(reset=False):
             else:
                 lastscan = time_format((time_utc - track.deploytime).total_seconds())
 
+            # Recent rates
+            intervals = conf_settings["RecentIntervals"]
+            kills_hour_recent = recent_rates(session.kill_times, None, intervals)
+            scans_hour_recent = recent_rates(session.scan_times, None, intervals)
+
             # Status bar
-            s_kills = f"{kills_hour}/h (+{last_kill}) [x{session.kills}]"
-            s_scans = f"{scans_hour}/h (+{lastscan}) [x{session.scansin}]"
+            show_alt = (int(time.time()) // 5) % 2 if conf_settings["ExtendedStats"] else None
+            
+            if show_alt and kills_hour_recent:
+                s_kills = kills_hour_recent
+            else:
+                s_kills = f"{kills_hour}/h (+{last_kill}) [x{session.kills}]"
+            
+            if show_alt and scans_hour_recent:
+                s_scans = scans_hour_recent
+            else:
+                s_scans = f"{scans_hour}/h (+{lastscan}) [x{session.scansin}]"
+            
             s_missions = f"{track.missionredirects}/{len(track.missionsactive)}"
             
             if conf_settings["LiveStatus"]:
-                msg.set_status(f"{status_col}[{ts}]💥 {s_kills:<23} | 📦 {s_scans:<23} | 🎯 {s_missions} ")
-
+                msg.set_status(f"{status_col}[{time_clock:>8}]💥 {s_kills:<23} | 📦 {s_scans:<23} | ⏱️ {time_sesh:<5} | 🎯 {s_missions}")
+            
             # Window title (Windows only)
             if conf_settings["DynamicTitle"] and os.name=="nt":
                 ctypes.windll.kernel32.SetConsoleTitleW(f"💥{kills_hour}/h ⌚{last_kill} 🎯 {s_missions}")
@@ -963,26 +1023,24 @@ def summary(stats, logtime=None, session=True):
     stats_out = {}
     
     # Shared function for cargo scan and kill summaries
-    def report(duration, count, recents):
+    def recents(duration, count, events):
         average_time = duration / (count - 1)
         hourly_rate = per_hour(average_time, 1)
         
         recent = ""
-
-        if session and conf_settings["ExtendedStats"] and count >= 20:
-            if count >= conf_settings["RecentAverageNum"] + 10:
-                num_recents = conf_settings["RecentAverageNum"] 
-            else:
-                num_recents = count - 10 - (count % 10)
-            
-            recent_average_time = sum(recents[-num_recents:]) / num_recents
-            recent = f" [x{num_recents}: {per_hour(recent_average_time, 1)}/h]"
+        
+        # Recent rates
+        if session and conf_settings["ExtendedStats"]:
+            intervals = conf_settings["RecentIntervals"]
+            recents = recent_rates(events, logtime, intervals)
+            if recents:
+                recent = f" [{recents}]"
         
         return f"{count:,} ({hourly_rate}/h | {time_format(average_time)}){recent}"
     
     # Kills
     if log_levels["Kills"] > 0:
-        stats_out["Kills"] = report(stats.killstime, stats.kills, stats.killsrecent)
+        stats_out["Kills"] = recents(stats.killstime, stats.kills, stats.kill_times)
     
     # Faction #1 kills
     faction_kills = max(stats.factions.values())
@@ -996,7 +1054,7 @@ def summary(stats, logtime=None, session=True):
 
     # Cargo scans
     if log_levels["Scans"] > 0 and stats.scansin > 1:
-        stats_out["Scans"] = report(stats.scanstime, stats.scansin, stats.scansrecent)
+        stats_out["Scans"] = recents(stats.scanstime, stats.scansin, stats.scan_times)
     
     # Bounties
     if log_levels[kill_type] > 0:
@@ -1024,7 +1082,7 @@ def summary(stats, logtime=None, session=True):
         
         for k, v in stats_out.items():
             if log_levels[k] >= 1:
-                out_terminal += f"\n{" "*10}-> {k}: {v}"
+                out_terminal += f"\n{' '*10}-> {k}: {v}"
             if log_levels[k] >= 2:
                 out_discord += f"\n:white_small_square: **{k}:** {v}"
 
@@ -1045,7 +1103,7 @@ if __name__ == "__main__":
             track.preloading = False
             if args.resetsession:
                 session.reset()
-                logevent(msg_term=f"Session stats reset",
+                logevent(msg_term="Session stats reset",
                         emoji="🔄", loglevel=1)
             update_status(True)
 
@@ -1055,7 +1113,7 @@ if __name__ == "__main__":
         if discord_enabled:
             if conf_discord["ForumChannel"]:
                 discordsend(f"💥 **ED AFK Monitor** 💥 by CMDR PSIPAB ([v{VERSION}](https://github.com/{GITHUB_REPO})){update_notice}")
-                webhook.content += f" <@{conf_discord["UserID"]}>"
+                webhook.content += f" <@{conf_discord['UserID']}>"
                 webhook.edit()
             else:
                 discordsend(f"# 💥 ED AFK Monitor 💥\n-# **by CMDR PSIPAB ([v{VERSION}](https://github.com/{GITHUB_REPO})){update_notice}**")
@@ -1081,7 +1139,8 @@ if __name__ == "__main__":
                             if not track.lastcheck or timemono - track.lastcheck >= 60:
                                 timeutc = datetime.now(timezone.utc)
                                 sessionsecs = (timeutc - track.deploytime).total_seconds()
-                                if sessionsecs == 0: sessionsecs = 1	# Avoid divide-by-zero if session started by first kill
+                                if sessionsecs == 0:
+                                    sessionsecs = 1	# Avoid divide-by-zero if session started by first kill
                                 #if track.lastcheck: debug(f"Last: {track.lastcheck} / This: {timemono} / Drift: {60-(timemono - track.lastcheck)}")
                                 timemono = timemono + (60 - (timemono - track.lastcheck)) if track.lastcheck else timemono	# Account for drift
                                 track.lastcheck = timemono
@@ -1097,7 +1156,7 @@ if __name__ == "__main__":
                                     #debug(f"Kills per hour {kills_hour}")
                                     if kills_hour < conf_settings["WarnKillRate"]:
                                         if not track.warnedkillrate and sessionsecs >= (conf_settings["WarnKillRateDelay"] * 60) and (not track.warnednokills or timemono - track.warnednokills >= (cooldown * 60)):
-                                            logevent(msg_term=f"Kill rate of {kills_hour}/h is below {conf_settings["WarnKillRate"]}/h threshold",
+                                            logevent(msg_term=f"Kill rate of {kills_hour}/h is below {conf_settings['WarnKillRate']}/h threshold",
                                                     emoji="⚠️", loglevel=conf_log_levels["KillRate"])
                                             track.warnedkillrate = timemono
                                     else:
@@ -1123,7 +1182,7 @@ if __name__ == "__main__":
                                         track.warnednokills = timemono
                     except Exception as e:
                         if repr(e) != trackingerror:
-                            msg.log(f"{Col.WARN}Warning:{Col.END} Kill rate tracking error: {e} [{datetime.strftime(datetime.now(), "%H:%M:%S")}])")
+                            msg.log(f"{Col.WARN}Warning:{Col.END} Kill rate tracking error: {e} [{datetime.strftime(datetime.now(), '%H:%M:%S')}])")
                             trackingerror = repr(e)
                     
                     time.sleep(1)

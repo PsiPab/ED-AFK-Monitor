@@ -2,6 +2,14 @@
 ED AFK Monitor Changelog
 ========================
 
+v260421
+-------
+- ExtendedStats: Real-time recent rates
+  - Defaults are 15/30/60 minutes (optional setting "RecentIntervals")
+  - Replaces recent kill rates in kill and cargo scan reports
+  - Recent kill and cargo scan rates shown on live status every other 5s
+- Live status: Added session elapsed time
+
 v260320
 -------
 - Live status line in terminal (setting: 'LiveStatus')
