@@ -1103,6 +1103,7 @@ if __name__ == "__main__":
             track.preloading = False
             if args.resetsession:
                 session.reset()
+                track.sessionstart(reset=True)
                 logevent(msg_term="Session stats reset",
                         emoji="🔄", loglevel=1)
             update_status(True)
