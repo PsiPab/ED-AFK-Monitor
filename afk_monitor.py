@@ -37,8 +37,8 @@ FUEL_CRIT = 0.1		# 10%
 UNKNOWN = "[Unknown]"
 REG_JOURNAL = r"^Journal\.\d{4}-\d{2}-\d{2}T\d{6}\.\d{2}\.log$"
 REG_WEBHOOK = r"^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-z0-9_-]+$"
-SHIPS_EASY = ["adder", "asp", "asp_scout", "cobramkiii", "cobramkiv", "diamondback", "diamondbackxl", "eagle", "empire_courier", "empire_eagle", "krait_light", "sidewinder", "viper", "viper_mkiv"]
-SHIPS_HARD = ["typex", "typex_2", "typex_3", "anaconda", "federation_dropship_mkii", "federation_dropship", "federation_gunship", "ferdelance", "empire_trader", "krait_mkii", "python", "vulture", "type9_military"]
+SHIPS_EASY = ["adder", "asp", "asp_scout", "cobramkiii", "cobramkiv", "cobramkv", "diamondback", "diamondbackxl", "eagle", "empire_courier", "empire_eagle", "krait_light", "sidewinder", "viper", "viper_mkiv"]
+SHIPS_HARD = ["anaconda", "empire_trader", "federation_dropship", "federation_dropship_mkii", "federation_gunship", "ferdelance", "krait_mkii", "python", "python_nx", "type9_military", "typex", "typex_2", "typex_3", "vulture"]
 BAIT_MESSAGES = ["$Pirate_ThreatTooHigh", "$Pirate_NotEnoughCargo", "$Pirate_OnNoCargoFound"]
 COMBAT_RANKS = ["Harmless", "Mostly Harmless", "Novice", "Competent", "Expert", "Master", "Dangerous", "Deadly", "Elite", "Elite I", "Elite II", "Elite III", "Elite IV", "Elite V"]
 # Config defaults
