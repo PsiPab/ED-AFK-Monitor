@@ -15,10 +15,9 @@ from urllib.request import urlopen
 
 try:
     from discord_webhook import DiscordWebhook
-    discord_enabled = True
+    discord_available = True
 except ImportError:
-    discord_enabled = False
-    print("discord-webhook unavailable - operating with terminal output only\n")
+    discord_available = False
 
 def fallover(message):
     print(message)
@@ -37,14 +36,18 @@ FUEL_CRIT = 0.1		# 10%
 UNKNOWN = "[Unknown]"
 REG_JOURNAL = r"^Journal\.\d{4}-\d{2}-\d{2}T\d{6}\.\d{2}\.log$"
 REG_WEBHOOK = r"^https:\/\/(?:canary\.|ptb\.)?discord(?:app)?\.com\/api\/webhooks\/\d+\/[A-z0-9_-]+$"
+WEBHOOK_AVATAR = "https://cdn.discordapp.com/attachments/1339930614064877570/1354083225923883038/t10.png"
+
+# Game stuff
 SHIPS_EASY = ["adder", "asp", "asp_scout", "cobramkiii", "cobramkiv", "cobramkv", "diamondback", "diamondbackxl", "eagle", "empire_courier", "empire_eagle", "krait_light", "sidewinder", "viper", "viper_mkiv"]
 SHIPS_HARD = ["anaconda", "empire_trader", "federation_dropship", "federation_dropship_mkii", "federation_gunship", "ferdelance", "krait_mkii", "python", "python_nx", "type9_military", "typex", "typex_2", "typex_3", "vulture"]
 BAIT_MESSAGES = ["$Pirate_ThreatTooHigh", "$Pirate_NotEnoughCargo", "$Pirate_OnNoCargoFound"]
 COMBAT_RANKS = ["Harmless", "Mostly Harmless", "Novice", "Competent", "Expert", "Master", "Dangerous", "Deadly", "Elite", "Elite I", "Elite II", "Elite III", "Elite IV", "Elite V"]
+
 # Config defaults
 DEFAULTS_SETTINGS = {"JournalFolder": "", "UseUTC": False, "LiveStatus": True, "DynamicTitle": True, "WarnKillRate": 20, "WarnNoKills": 20, "PirateNames": False, "BountyFaction": False, "BountyValue": False, "ExtendedStats": False, "MinScanLevel": 1}
 DEFAULTS_EXTRA = {"RecentFiles": 10, "TruncatePirate": 25, "TruncateFaction": 30, "WarnNoKillsInitial": 5, "WarnKillRateDelay": 5, "WarnCooldown": 30, "RecentIntervals": [15, 30, 60], "StatusPadChar": " ", "StatusColBG": "5;236", "StatusColFG": "5;254", "StatusSafeMargin": 2}
-DEFAULTS_DISCORD = {"WebhookURL": "", "UserID": 0, "PrependCmdrName": False, "ForumChannel": False, "ThreadCmdrNames": False, "Timestamp": True, "Identity": True}
+DEFAULTS_DISCORD = {"WebhookURL": "", "WebhookLiveURL": "", "UserID": 0, "PrependCmdrName": False, "ForumChannel": False, "ThreadCmdrNames": False, "Timestamp": True, "Identity": True}
 DEFAULTS_LOG_LEVELS = {"ScanIncoming": 1, "ScanEasy": 1, "ScanHard": 2, "KillEasy": 2, "KillHard": 2, "FighterHull": 2, "FighterDown": 3, "ShipShields": 3, "ShipHull": 3, "Died": 3, "CargoLost": 3, "BaitValueLow": 2, "SecurityScan": 2, "SecurityAttack": 3, "FuelReport": 1, "FuelLow": 2, "FuelCritical": 3, "Missions": 2, "MissionsAll": 3, "Merits": 0, "NoKills": 3, "KillRate": 3, "SummaryKills": 2, "SummaryFaction": 0, "SummaryScans": 0, "SummaryBounties": 2, "SummaryMerits": 2}
 
 class Col:
@@ -207,7 +210,8 @@ parser = argparse.ArgumentParser(
     description="Live monitoring of Elite Dangerous AFK sessions to terminal and Discord")
 parser.add_argument("-p", "--profile", help="Load a specific profile for config settings")
 parser.add_argument("-j", "--journal", help="Override for path to journal folder")
-parser.add_argument("-w", "--webhook", help="Override for Discord webhook URL")
+parser.add_argument("-w", "--webhook", help="Override for Discord logging webhook URL")
+parser.add_argument("-wl", "--webhooklive", help="Override for Discord live webhook URL")
 parser.add_argument("-r", "--resetsession", action="store_true", default=None, help="Reset session stats after preloading")
 parser.add_argument("-t", "--test", action="store_true", default=None, help="Re-routes Discord messages to terminal")
 parser.add_argument("-d", "--debug", action="store_true", default=None, help="Print information for debugging")
@@ -231,7 +235,7 @@ def getconfig(category: str, defaults: dict, warn_missing = True) -> dict:
         else:
             this_setting = defaults[setting]
             if warn_missing:
-                msg.log(f"{WARNING} Config '{category}' -> '{setting}' not found (using default: {defaults[setting]})")
+                msg.log(f"{WARNING} Config '{category}' -> '{setting}' not found (using default: '{defaults[setting]}')")
         
         # Check setting matches type provided in defaults
         if type(this_setting) is not type(defaults[setting]):
@@ -286,6 +290,7 @@ class Stats:
 class Tracking:
     def __init__(self):
         self.deploytime = None
+        self.totaltime = 0
         self.warnednokills = None
         self.warnedkillrate = None
         self.fuelcapacity = 64
@@ -309,6 +314,8 @@ class Tracking:
         self.cmdrgamemode = None
         self.cmdrlocation = None
         self.lastcheck = None
+        self.live_update = None
+        self.live_reset = True
     
     def sessionstart(self, reset=False, delta=0):
         if not self.deploytime or reset:
@@ -317,7 +324,7 @@ class Tracking:
             else:
                 self.deploytime = self.thiseventtime - timedelta(seconds=delta)
             session.reset()
-            debug(f"Session tracking started at {self.deploytime}")
+            debug(f"Session started: {self.deploytime}")
             session.kill_times.append(self.deploytime)
             session.scan_times.append(self.deploytime)
             self.warnednokills = None
@@ -327,8 +334,10 @@ class Tracking:
 
     def sessionend(self):
         if self.deploytime:
-            debug(f"Session tracking ended at {self.thiseventtime} ({time_format((self.thiseventtime-self.deploytime).total_seconds())})")
+            self.totaltime += (self.thiseventtime - self.deploytime).total_seconds()
+            debug(f"Session ended: {self.thiseventtime} ({time_format((self.thiseventtime-self.deploytime).total_seconds())}) [Total: {time_format(self.totaltime)}]")
             self.deploytime = None
+            self.live_reset = True
             update_status(True)
 
 session = Stats()
@@ -478,40 +487,70 @@ debug(f"Log levels: {conf_log_levels}")
 
 msg.log("\nStarting... (Press Ctrl+C to stop)\n")
 
-# Check webhook appears valid before starting
-discord_webhook = args.webhook if args.webhook is not None else conf_discord["WebhookURL"]
-if discord_enabled and re.search(REG_WEBHOOK, discord_webhook):
-    webhook = DiscordWebhook(url=discord_webhook)
-    if conf_discord["Identity"]:
-        webhook.username = "ED AFK Monitor"
-        webhook.avatar_url = "https://cdn.discordapp.com/attachments/1339930614064877570/1354083225923883038/t10.png"
-    if conf_discord["ForumChannel"]:
-        journal_start = datetime.fromisoformat(journal_file[8:-7])
-        journal_start = datetime.strftime(journal_start, "%Y-%m-%d %H:%M:%S")
-        if conf_discord["ThreadCmdrNames"]:
-            webhook.thread_name = f"{track.cmdrname} {journal_start}"
-        else:
-            webhook.thread_name = journal_start
-        #debug(f"webhook.thread_name: {webhook.thread_name}")
-elif discord_enabled:
-    discord_enabled = False
-    discord_test = False
-    msg.log(f"{Col.WHITE}Info:{Col.END} Discord webhook missing or invalid - operating with terminal output only\n")
+# Discord webhooks
+discord_webhook_log = args.webhook if args.webhook is not None else conf_discord["WebhookURL"]
+discord_webhook_live = args.webhooklive if args.webhooklive is not None else conf_discord["WebhookLiveURL"]
+webhook_log = None if not discord_test else True
+webhook_live = None if not discord_test else True
+
+if discord_available:
+    # Logging webhook
+    if discord_webhook_log and re.search(REG_WEBHOOK, discord_webhook_log):
+        webhook_log = DiscordWebhook(url=discord_webhook_log)
+        if conf_discord["Identity"]:
+            webhook_log.username = "ED AFK Monitor"
+            webhook_log.avatar_url = WEBHOOK_AVATAR
+        if conf_discord["ForumChannel"]:
+            journal_start = datetime.fromisoformat(journal_file[8:-7])
+            journal_start = datetime.strftime(journal_start, "%Y-%m-%d %H:%M:%S")
+            if conf_discord["ThreadCmdrNames"]:
+                webhook_log.thread_name = f"{track.cmdrname} {journal_start}"
+            else:
+                webhook_log.thread_name = journal_start
+            #debug(f"webhook_log.thread_name: {webhook_log.thread_name}")
+    elif discord_webhook_log:
+        msg.log(f"{Col.WARN}Warning:{Col.END} Discord (logging) webhook invalid URL; logging to terminal only\n")
+
+    # Live stats webhook
+    if discord_webhook_live and re.search(REG_WEBHOOK, discord_webhook_live):
+        webhook_live = DiscordWebhook(url=discord_webhook_live)
+        if conf_discord["Identity"]:
+            webhook_live.username = "ED AFK Monitor Live"
+            webhook_live.avatar_url = WEBHOOK_AVATAR
+    elif discord_webhook_live:
+        msg.log(f"{Col.WARN}Warning:{Col.END} Discord (live) webhook invalid URL; live stats for Discord disabled\n")
+elif discord_webhook_log or discord_webhook_live:
+    msg.log(f"{Col.WARN}Warning:{Col.END} discord-webhook module unavailable; operating with terminal output only\n")
 
 # Send a webhook message or (don"t) die trying
 def discordsend(message=""):
-    if discord_enabled and message and not discord_test:
+    if webhook_log and message and not discord_test:
         try:
-            webhook.content = message
-            webhook.execute()
-            if conf_discord["ForumChannel"] and webhook.thread_name and not webhook.thread_id:
-                webhook.thread_name = None
-                webhook.thread_id = webhook.id
-                #debug(f"webhook.thread_id: {webhook.thread_id}")
+            webhook_log.content = message
+            webhook_log.execute()
+            if conf_discord["ForumChannel"] and webhook_log.thread_name and not webhook_log.thread_id:
+                webhook_log.thread_name = None
+                webhook_log.thread_id = webhook_log.id
+                #debug(f"webhook_log.thread_id: {webhook_log.thread_id}")
         except Exception as e:
-            msg.log(f"{Col.WHITE}Discord:{Col.END} Webhook send error: {e}")
-    elif discord_enabled and message and discord_test:
+            msg.log(f"{Col.WHITE}Discord:{Col.END} Webhook (logging) send error: {e}")
+    elif message and discord_test:
         msg.log(f"{Col.WHITE}DISCORD:{Col.END} {message}")
+
+def discord_live_update(message=""):
+    if webhook_live and message and not discord_test:
+        try:
+            cmdr_name = "" if not conf_discord["PrependCmdrName"] else f"**{track.cmdrname}** "
+            webhook_live.content = f"{cmdr_name}{message}"
+            if not track.live_reset:
+                webhook_live.edit()
+            else:
+                webhook_live.execute()
+                track.live_reset = False
+        except Exception as e:
+            msg.log(f"{Col.WHITE}Discord:{Col.END} Webhook (live) send error: {e}")
+    elif message and discord_test:
+        msg.log(f"{Col.WHITE}DISCORD_LIVE:{Col.END} {message} {{{datetime.now().strftime("%H:%M:%S")}}}")
 
 # Log events
 def logevent(msg_term, msg_discord=None, emoji=None, timestamp=None, loglevel=2, event=None):
@@ -531,7 +570,7 @@ def logevent(msg_term, msg_discord=None, emoji=None, timestamp=None, loglevel=2,
         msg.log(f"[{logtime}]{emoji}{msg_term}")
     
     # Discord
-    if discord_enabled and loglevel > 1:
+    if webhook_log and loglevel > 1:
         if event is not None and track.dupeevent == event:
             track.duperepeats += 1
         else:
@@ -1010,7 +1049,7 @@ def update_status(reset=False):
                 msg.clear_status()
 
 # Output stats for kills, bounties and merits
-def summary(stats, logtime=None, session=True):
+def summary(stats, logtime=None, session=True, live=False):
     kill_type = track.killtype.capitalize()
     log_levels = {"Kills": conf_log_levels["SummaryKills"], "Faction": conf_log_levels["SummaryFaction"],
                   kill_type: conf_log_levels["SummaryBounties"], "Merits": conf_log_levels["SummaryMerits"],
@@ -1021,10 +1060,14 @@ def summary(stats, logtime=None, session=True):
         return
     
     stats_out = {}
+    if session:
+        session_seconds = (logtime - track.deploytime).total_seconds()
+    else:
+        session_seconds = track.totaltime
     
     # Shared function for cargo scan and kill summaries
     def recents(duration, count, events):
-        average_time = duration / (count - 1)
+        average_time = duration / count
         hourly_rate = per_hour(average_time, 1)
         
         recent = ""
@@ -1040,13 +1083,13 @@ def summary(stats, logtime=None, session=True):
     
     # Kills
     if log_levels["Kills"] > 0:
-        stats_out["Kills"] = recents(stats.killstime, stats.kills, stats.kill_times)
+        stats_out["Kills"] = recents(session_seconds, stats.kills, stats.kill_times)
     
     # Faction #1 kills
     faction_kills = max(stats.factions.values())
     if log_levels["Faction"] > 0 and faction_kills > 1:
         faction_kills = max(stats.factions.values())
-        faction_kills_hour = per_hour(stats.killstime / (faction_kills - 1), 1)
+        faction_kills_hour = per_hour(session_seconds / (faction_kills - 1), 1)
         faction_kills_percent = round((faction_kills / stats.kills) * 100)
         faction_name = max(stats.factions, key=stats.factions.get)
 
@@ -1054,18 +1097,18 @@ def summary(stats, logtime=None, session=True):
 
     # Cargo scans
     if log_levels["Scans"] > 0 and stats.scansin > 1:
-        stats_out["Scans"] = recents(stats.scanstime, stats.scansin, stats.scan_times)
+        stats_out["Scans"] = recents(session_seconds, stats.scansin, stats.scan_times)
     
     # Bounties
     if log_levels[kill_type] > 0:
-        bounties_hour = per_hour(stats.killstime / stats.bounties)
+        bounties_hour = per_hour(session_seconds / stats.bounties)
         bounties_average = num_format(stats.bounties // stats.kills)
 
         stats_out[kill_type] = f"{num_format(stats.bounties)} ({num_format(bounties_hour)}/h | {bounties_average}/kill)"
     
     # Merits
     if log_levels["Merits"] > 0 and stats.merits > 0:
-        merits_hour = per_hour(stats.killstime / stats.merits) if stats.merits > 0 else 0
+        merits_hour = per_hour(session_seconds / stats.merits) if stats.merits > 0 else 0
         merits_average = round(stats.merits / stats.kills, 1)
         
         stats_out["Merits"] = f"{stats.merits:,} ({merits_hour:,}/h | {merits_average:,}/kill)"
@@ -1074,7 +1117,7 @@ def summary(stats, logtime=None, session=True):
     if stats_out:
         type = "Session" if session else "Total"
         
-        session_time = f" ({time_format(stats.killstime)})"
+        session_time = f" ({time_format(session_seconds)})"
         missions_completed = f" [{track.missionredirects}/{len(track.missionsactive)}]" if len(track.missionsactive) > 0 else ""
         
         out_terminal = f"{type} Stats{session_time}{missions_completed}"
@@ -1086,9 +1129,14 @@ def summary(stats, logtime=None, session=True):
             if log_levels[k] >= 2:
                 out_discord += f"\n:white_small_square: **{k}:** {v}"
 
-        logevent(msg_term=f"{out_terminal}",
-            msg_discord=f"{out_discord}",
-            emoji="📝", timestamp=logtime, loglevel=log_max)
+        if not live:
+            logevent(msg_term=f"{out_terminal}",
+                msg_discord=f"{out_discord}",
+                emoji="📝", timestamp=logtime, loglevel=log_max)
+        else:
+            discord_ts = round(time.time())
+            live_stats = f"{out_discord}\n-# Updated: <t:{discord_ts}:t> (<t:{discord_ts}:R>)"
+            discord_live_update(live_stats)
 
 if __name__ == "__main__":
     try:
@@ -1111,11 +1159,12 @@ if __name__ == "__main__":
         # Send Discord startup
         update_notice = f"\n:arrow_up: Update **[v{latest_version}](https://github.com/{GITHUB_REPO}/releases)** available!" if VERSION < latest_version else ""
 
-        if discord_enabled:
+        if webhook_log:
             if conf_discord["ForumChannel"]:
                 discordsend(f"💥 **ED AFK Monitor** 💥 by CMDR PSIPAB ([v{VERSION}](https://github.com/{GITHUB_REPO})){update_notice}")
-                webhook.content += f" <@{conf_discord['UserID']}>"
-                webhook.edit()
+                if not discord_test:
+                    webhook_log.content += f" <@{conf_discord['UserID']}>"
+                    webhook_log.edit()
             else:
                 discordsend(f"# 💥 ED AFK Monitor 💥\n-# **by CMDR PSIPAB ([v{VERSION}](https://github.com/{GITHUB_REPO})){update_notice}**")
         
@@ -1135,8 +1184,9 @@ if __name__ == "__main__":
                 if not line:
                     try:
                         if track.deploytime:
-                            # Check for instance problems every minute
                             timemono = time.monotonic()
+                            
+                            # Check for instance problems every minute
                             if not track.lastcheck or timemono - track.lastcheck >= 60:
                                 timeutc = datetime.now(timezone.utc)
                                 sessionsecs = (timeutc - track.deploytime).total_seconds()
@@ -1181,6 +1231,11 @@ if __name__ == "__main__":
                                         logevent(msg_term=f"No kills logged for {sessionmins} minutes",
                                                 emoji="⚠️", loglevel=conf_log_levels["NoKills"])
                                         track.warnednokills = timemono
+                            
+                            # Send a session summary update every minute
+                            if webhook_live and (not track.live_update or timemono - track.live_update >= 60):
+                                summary(session, logtime=datetime.now(timezone.utc), live=True)
+                                track.live_update = timemono
                     except Exception as e:
                         if repr(e) != trackingerror:
                             msg.log(f"{Col.WARN}Warning:{Col.END} Kill rate tracking error: {e} [{datetime.strftime(datetime.now(), '%H:%M:%S')}])")
@@ -1194,13 +1249,12 @@ if __name__ == "__main__":
                 track.lines += 1
 
     except (KeyboardInterrupt, SystemExit):
+        track.sessionend()
         summary(total, session=False)
         logevent(msg_term=f"Monitor stopped ({journal_file})",
-        msg_discord=f"**Monitor stopped** ({journal_file})",
-        emoji="📕", loglevel=2)
+            msg_discord=f"**Monitor stopped** ({journal_file})",
+            emoji="📕", loglevel=2)
         debug(f"\nTrack: {track.__dict__}")
-        
-        track.sessionend()
         msg.show_cursor()
         
         if sys.argv[0].count("\\") > 1:

@@ -2,6 +2,13 @@
 ED AFK Monitor Changelog
 ========================
 
+WIP
+---
+- Live monitoring of session stats to Discord
+  - Configure a second webhook and set 'WebhookLiveURL' to enable
+  - Outputs all the same stats as regular session stats, every minute
+  - A new post is used for each session (i.e. on relog)
+
 v260421
 -------
 - ExtendedStats: Real-time recent rates

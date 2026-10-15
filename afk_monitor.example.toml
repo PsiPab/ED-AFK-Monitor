@@ -1,8 +1,13 @@
-# AFK Monitor Config
+# ED AFK Monitor Config
+# 
 # Welcome! This file controls the various options for AFK Monitor.
-# There are a lot of settings and all are optional, but if you want to get started quickly:
+# 
+# There are a lot of settings and all are optional, but to get started quickly:
 # - Set 'WebhookURL' and 'UserID' in the [Discord] section to enable Discord output
 # - Tweak the settings in [LogLevels] to control what gets logged and where to
+# 
+# Settings lines don't start with a "#"; lines that do are informational only
+# 
 # Feel free to read over the other settings at your leisure, and good hunting :)
 
 [Settings]
@@ -32,16 +37,18 @@ ExtendedStats = false
 MinScanLevel = 1
 
 [Discord]
-# Use the settings below to enable Discord webhook integration
+# WebhookURL enables logging events to Discord through a webhook
 # Webhook URL is located in Discord > Edit Channel > Integrations > Webhooks, e.g:
 # WebhookURL = 'https://justanexample.fake/api/webhooks/lotsofnumbers/lotsoflettersnumbersandsymbols'
 WebhookURL = ''
-# User ID can be found by sending \@yourdiscordusername on Discord (use only the numbers), e.g.:
+# User ID for pings can be found by sending \@yourdiscordusername on Discord (use only the numbers), e.g.:
 # UserID = 745279460191739562
 UserID = 0
+# WebhookLiveURL enables sending live session stats to Discord (use of different channel/webhook recommended)
+WebhookLiveURL = ''
 # PrependCmdrName adds the active commander name to the start of Discord messages (Default: false)
 PrependCmdrName = false
-# ForumChannel specifies webhook is for a forum channel and enables thread support (Default: false)
+# ForumChannel specifies logging webhook is for a forum channel and enables thread support (Default: false)
 ForumChannel = false
 # ThreadCmdrNames = true include the commander name in the thread name along with the start time (Default: false)
 ThreadCmdrNames = false
@@ -77,7 +84,7 @@ MissionsAll = 3         # Kills completed for all missions
 Merits = 0              # Merits gained (powerplay-only)
 NoKills = 3             # Warning of no kills for configured time ('WarnNoKills' in Settings)
 KillRate = 3            # Warning of low kill rate per hour ('WarnKillRate' in Settings)
-# Stat summaries are collated into one message every 10 kills and on exit
+# Stat summaries are collated into one message every 10 kills, on exit and for live Discord stats
 # Levels work the same, with 3 in any category adding a user ping to the message
 SummaryScans = 0        # Incoming cargo scans and rate/h
 SummaryKills = 2        # Kills and rate/h from bounties or bonds
