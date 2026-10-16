@@ -190,19 +190,46 @@ msg.log(f"{'='*len(title)}{Col.END}\n")
 if VERSION < latest_version:
     msg.log(f"{Col.YELL}Update v{latest_version} is available!{Col.END}\n{Col.WHITE}Download:{Col.END} https://github.com/{GITHUB_REPO}/releases\n")
 
-# Load config file
+# Config loading and first run setup
 if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
-    configfile = Path(__file__).parents[1] / "afk_monitor.toml"
+    config_file_path = Path(__file__).parents[1]
 else:
-    configfile = Path(__file__).parent / "afk_monitor.toml"
-if configfile.is_file():
-    with open(configfile, mode="rb") as f:
-        try:
-            config = tomllib.load(f)
-        except tomllib.TOMLDecodeError as e:
-            fallover(f"Config decode error: {e}")
-else:
-    fallover("Config file not found: copy and rename afk_monitor.example.toml to afk_monitor.toml\n")
+    config_file_path = Path(__file__).parent
+
+config_file = Path(config_file_path / "afk_monitor.toml")
+config_ready = False
+
+while not config_ready:
+    if config_file.is_file():
+        with open(config_file, mode="rb") as f:
+            try:
+                config = tomllib.load(f)
+                config_ready = True
+            except tomllib.TOMLDecodeError as e:
+                msg.log(f"Config decode error: {e}\n\nPlease check 'afk_monitor.toml' for errors and try again.")
+    else:
+        config_example = Path(config_file_path / "afk_monitor.example.toml")
+        if config_example.is_file():
+            try:
+                import platform
+                import shutil
+                import subprocess
+                shutil.copyfile(config_example, config_file)
+                msg.log("Example config file copied to 'afk_monitor.toml'.\n\nEdit this file to configure settings (optional, but recommended) and continue when ready.")
+                if platform.system() == "Windows":
+                    subprocess.call(["start", config_file], shell=True)
+                elif platform.system() == "Linux":
+                    subprocess.call(["xdg-open", config_file])
+            except Exception as e:
+                msg.log(f"Error copying example config: {e}\n\nPlease copy and rename 'afk_monitor.example.toml' to 'afk_monitor.toml' and try again.")
+        else:
+            fallover("Error: Example config file 'afk_monitor.example.toml' not found.\n\nPlease reinstall AFK Monitor and try again.")
+    
+    if not config_ready:
+        response = input("\nPress ENTER to load config, or type anything then ENTER to quit:\n")
+        if response != "":
+            msg.log("\nQuitting...")
+            sys.exit()
 
 # Command line overrides
 parser = argparse.ArgumentParser(

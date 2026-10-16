@@ -8,6 +8,11 @@ WIP
   - Configure a second webhook and set 'WebhookLiveURL' to enable
   - Outputs all the same stats as regular session stats, every minute
   - A new post is used for each session (i.e. on relog)
+- Improved the first time run/config error experience
+  - Example config is automatically copied and opened for editing
+  - Config is (re)loaded when user is ready without needing restart
+- Stat summaries now use more accurate timings (same as live stats)
+- Cobra Mk V (easy/hard) and Python Mk II (hard) added to ship pools
 
 v260421
 -------
