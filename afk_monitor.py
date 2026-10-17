@@ -28,7 +28,7 @@ def fallover(message):
 # Internals
 DEBUG_MODE = False
 DISCORD_TEST = False
-VERSION = 260421
+VERSION = 261017
 GITHUB_REPO = "PsiPab/ED-AFK-Monitor"
 DUPE_MAX = 5
 FUEL_LOW = 0.2		# 20%
@@ -217,7 +217,7 @@ while not config_ready:
                 shutil.copyfile(config_example, config_file)
                 msg.log("Example config file copied to 'afk_monitor.toml'.\n\nEdit this file to configure settings (optional, but recommended) and continue when ready.")
                 if platform.system() == "Windows":
-                    subprocess.call(["start", config_file], shell=True)
+                    os.startfile(config_file)
                 elif platform.system() == "Linux":
                     subprocess.call(["xdg-open", config_file])
             except Exception as e:
