@@ -11,13 +11,15 @@ WIP
 - Improved the first time run/config error experience
   - Example config is automatically copied and opened for editing
   - Config is (re)loaded when user is ready without needing restart
+- Optional setting 'WinTitleCmdrName' prepends commander name to Window title
+  - Windows only, requires 'DynamicTitle' to be enabled
 - Stat summaries now use more accurate timings (same as live stats)
 - Cobra Mk V (easy/hard) and Python Mk II (hard) added to ship pools
 
 v260421
 -------
 - ExtendedStats: Real-time recent rates
-  - Defaults are 15/30/60 minutes (optional setting "RecentIntervals")
+  - Defaults are 15/30/60 minutes (optional setting 'RecentIntervals')
   - Replaces recent kill rates in kill and cargo scan reports
   - Recent kill and cargo scan rates shown on live status every other 5s
 - Live status: Added session elapsed time

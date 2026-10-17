@@ -1,9 +1,10 @@
 # AFK Monitor Optional Config
+# 
 # This file contains optional settings that can be used in afk_monitor.toml
-#
+# 
 # SETTINGS HERE ARE FOR INFO ONLY - THIS FILE IS NOT LOADED BY AFK MONITOR!
 # 
-# To modify a setting, copy and paste it under [Settings] in afk_monitor.toml
+# To modify/use a setting, copy and paste it under [Settings] in afk_monitor.toml
 
 [Settings]
 # RecentFiles specifies number of files to show with --fileselect (default: 10)
@@ -20,6 +21,8 @@ WarnKillRateDelay = 5
 WarnCooldown = 30
 # RecentIntervals is a list of numbers in minutes to calculate recent hourly rates for (default: [15, 30, 60])
 RecentIntervals = [15, 30, 60]
+# WinTitleCmdrName prepends commander name to the window title (Default: false, requires DynamicTitle = true)
+WinTitleCmdrName = false
 
 # =====================
 # Status line
